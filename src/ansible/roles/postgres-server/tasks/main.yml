@@ -1,0 +1,122 @@
+---
+- name: Install, configure and start PostgreSQL
+  block:
+    - name: Install PostgreSQL and dependency (dnf)
+      ansible.builtin.yum:
+        pkg:
+          - postgresql-server
+          - python3-psycopg2
+        state: latest
+        update_cache: yes
+      when: ansible_pkg_mgr in ['dnf', 'yum']
+
+    - name: Install PostgreSQL and dependency (apt)
+      ansible.builtin.apt:
+        pkg:
+          - postgresql
+          - python3-psycopg2
+        state: latest
+        update_cache: yes
+      when: ansible_pkg_mgr == 'apt'
+
+    - name: Post-install setup (RHEL)
+      ansible.builtin.command: postgresql-setup --initdb
+      args:
+        creates: "/var/lib/pgsql/data/postgresql.conf"
+      when: ansible_facts.distribution in ['AlmaLinux', 'CentOS']
+
+    - name: Post-install setup
+      ansible.builtin.service:
+        name: postgresql
+        state: started
+
+    - name: Wait for PostgreSQL to start
+      ansible.builtin.wait_for:
+        port: 5432
+        host: localhost
+        timeout: 30
+
+    - name: Create user student
+      community.postgresql.postgresql_user:
+        name: student
+        password: "{{ student_password }}"
+        state: present
+      become: true
+      become_user: postgres
+
+    - name: Get PostgreSQL configuration details
+      community.postgresql.postgresql_info:
+        filter: settings
+      register: pg_info
+      become: true
+      become_user: postgres
+
+    - name: Parse configs path
+      ansible.builtin.set_fact:
+        pg_config: "{{ pg_info.settings.config_file.setting }}"
+        pg_hba: "{{ pg_info.settings.hba_file.setting }}"
+
+    - name: Replace PostgreSQL configuration file to allow remote connection
+      ansible.builtin.lineinfile:
+          path: "{{ pg_config }}"
+          line: '{{ item }}'
+          owner: postgres
+          group: postgres
+          mode: '0644'
+      with_items:
+          - "listen_addresses = '*'"
+          - "port = {{ postgres_port }}"
+
+    - name: Allow md5 connection for the student from slave server
+      community.postgresql.postgresql_pg_hba:
+        dest: "{{ pg_hba }}"
+        contype: host
+        databases: all
+        source: "{{ hostvars['localhost'].slave_server.hostname }}/32"
+        method: md5
+        users: "student"
+        create: true
+      notify: Restart PostgreSQL service
+
+    - name: Test query localy
+      community.postgresql.postgresql_query:
+        db: postgres
+        query: SELECT 1
+      register: select_1_result
+      become: true
+      become_user: postgres
+
+    - name: Query result
+      ansible.builtin.debug:
+        msg: "{{ select_1_result.query_result }}"
+
+  rescue:
+    - name: Remove PostgreSQL and dependency (dnf)
+      ansible.builtin.yum:
+        pkg:
+          - postgresql-server
+          - python3-psycopg2
+        state: absent
+      when: ansible_pkg_mgr in ['dnf', 'yum']
+
+    - name: Remove PostgreSQL and dependency (apt)
+      ansible.builtin.apt:
+        pkg:
+          - postgres*
+          - python3-psycopg2
+        state: absent
+        purge: true
+      when: ansible_pkg_mgr == 'apt'
+
+    # - name: Remove configuration files
+    #   ansible.builtin.file:
+    #     path: "{{ item }}"
+    #     state: absent
+    #   loop:
+    #     - "/var/lib/pgsql/"
+    #     - "/var/lib/postgresql/"
+    #     - "/var/log/postgresql/"
+    #     - "/etc/postgresql/"
+    
+    - name: Stop playbook execution
+      meta: end_play

@@ -1,0 +1,11 @@
+---
+- name: Gather service facts
+  ansible.builtin.service_facts:
+
+- name: PostgreSQL port forwarding
+  ansible.posix.firewalld:
+    port: "{{ postgres_port }}/tcp"
+    permanent: true
+    state: enabled
+  notify: Restart firewalld service
+  when: ansible_facts.services['firewalld.service'] is defined

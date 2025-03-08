@@ -1,0 +1,52 @@
+---
+- name: Install PostgreSQL 
+  block:
+    - name: Install PostgreSQL and dependency (dnf)
+      ansible.builtin.yum:
+        pkg:
+          - postgresql
+          - python3-psycopg2
+        state: latest
+        update_cache: yes
+      when: ansible_pkg_mgr in ['dnf', 'yum']
+
+    - name: Install PostgreSQL and dependency (apt)
+      ansible.builtin.apt:
+        pkg:
+          - postgresql
+          - python3-psycopg2
+        state: latest
+        update_cache: yes
+      when: ansible_pkg_mgr == 'apt'
+
+    - name: Test query from slave_server
+      community.postgresql.postgresql_query: 
+        db: postgres
+        login_host: "{{ hostvars['localhost'].master_server.hostname }}"
+        port: "{{ postgres_port }}"
+        login_user: student
+        login_password: "{{ student_password }}"
+        query: SELECT 1
+      register: select_1_result
+
+    - name: Query result
+      ansible.builtin.debug:
+        msg: "{{ select_1_result.query_result }}"
+
+  rescue:
+    - name: Remove PostgreSQL and dependency (dnf)
+      ansible.builtin.yum:
+        pkg:
+          - postgresql
+          - python3-psycopg2
+        state: absent
+      when: ansible_pkg_mgr in ['dnf', 'yum']
+
+    - name: Remove PostgreSQL and dependency (apt)
+      ansible.builtin.apt:
+        pkg:
+          - postgres*
+          - python3-psycopg2
+        state: absent
+        purge: true
+      when: ansible_pkg_mgr == 'apt'

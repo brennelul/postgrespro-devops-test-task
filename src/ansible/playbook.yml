@@ -1,0 +1,16 @@
+---
+- hosts: all
+  gather_facts: false
+  roles:
+    - check_load
+
+- hosts: "{{ hostvars['localhost'].master_server.hostname }}"
+  gather_facts: true
+  roles:
+    - postgres-server
+    - port-forwarding
+
+- hosts: "{{ hostvars['localhost'].slave_server.hostname }}"
+  gather_facts: true
+  roles:
+    - postgres-client

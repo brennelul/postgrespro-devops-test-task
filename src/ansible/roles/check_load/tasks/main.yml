@@ -1,0 +1,36 @@
+---
+- name: Get load average
+  command: uptime
+  register: uptime_result
+
+- name: Get memory usage
+  command: free -m
+  register: memory_result
+
+- name: Store results
+  ansible.builtin.set_fact:
+    server_stats:
+      hostname: "{{ inventory_hostname }}"
+      load_avg: "{{ uptime_result.stdout.split('load average: ')[1].split(', ')[0] | float }}"
+      used_memory: "{{ (memory_result.stdout_lines[1].split()[2] | int) / (memory_result.stdout_lines[1].split()[1] | int) * 100 }}"
+
+- name: Add stats to all_servers
+  delegate_to: localhost
+  run_once: true
+  ansible.builtin.set_fact:
+    all_servers: "{{ all_servers | default([]) + [hostvars[item].server_stats] }}"
+  loop: "{{ ansible_play_hosts }}"
+
+- name: Find the master server
+  delegate_to: localhost
+  delegate_facts: true
+  run_once: true
+  ansible.builtin.set_fact:
+    master_server: "{{ all_servers | sort(attribute='load_avg') | first }}"
+    slave_server: "{{ all_servers | sort(attribute='load_avg') | last }}"
+
+- name: Echo hostname of master server
+  delegate_to: localhost
+  run_once: true
+  ansible.builtin.debug:
+    msg: "Best: {{ hostvars['localhost'].master_server.hostname }}"
