@@ -10,7 +10,7 @@
 - name: Store results
   ansible.builtin.set_fact:
     server_stats:
-      hostname: "{{ inventory_hostname }}"
+      hostname: "{{ ansible_default_ipv4.address }}"
       load_avg: "{{ uptime_result.stdout.split('load average: ')[1].split(', ')[0] | float }}"
       used_memory: "{{ (memory_result.stdout_lines[1].split()[2] | int) / (memory_result.stdout_lines[1].split()[1] | int) * 100 }}"
 
